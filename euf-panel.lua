@@ -278,6 +278,8 @@ local function makeDraggable(frame, dragHandle)
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local targetPos = frame.Position
+	local dragThreshold = 8
+	local isTracking = false
 
 	local function update(input)
 		local delta = input.Position - dragStart
@@ -286,12 +288,13 @@ local function makeDraggable(frame, dragHandle)
 
 	dragHandle.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			dragging = true
+			isTracking = true
 			dragStart = input.Position
 			startPos = frame.Position
 
 			input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
+					isTracking = false
 					dragging = false
 				end
 			end)
@@ -305,6 +308,13 @@ local function makeDraggable(frame, dragHandle)
 	end)
 
 	UserInputService.InputChanged:Connect(function(input)
+		if isTracking then
+			local delta = input.Position - dragStart
+			if not dragging and delta.Magnitude > dragThreshold then
+				dragging = true
+			end
+		end
+		
 		if input == dragInput and dragging then
 			update(input)
 		end
@@ -312,6 +322,7 @@ local function makeDraggable(frame, dragHandle)
 
 	UserInputService.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			isTracking = false
 			dragging = false
 		end
 	end)
@@ -381,8 +392,12 @@ makeDraggable(ToggleButton, ToggleButton)
 local targetWidth = 650
 local targetHeight = 420
 local panelOpen = false
+local lastToggle = 0
 
 local function togglePanel()
+	if os.clock() - lastToggle < 0.5 then return end
+	lastToggle = os.clock()
+
 	panelOpen = not panelOpen
 	local viewportSize = Camera.ViewportSize
 	local targetPanelPos = panelOpen and UDim2.new(0.5, -targetWidth/2, 0.5, -targetHeight/2) or UDim2.new(0, -targetWidth - 50, 0.5, -targetHeight/2)
@@ -399,7 +414,7 @@ local function togglePanel()
 	TweenService:Create(ToggleButton, TweenInfo.new(0.6, buttonStyle, Enum.EasingDirection.Out), {Position = targetButtonPos}):Play()
 	TweenService:Create(ToggleButton, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Rotation = panelOpen and 180 or 0}):Play()
 end
-ToggleButton.MouseButton1Click:Connect(togglePanel)
+ToggleButton.Activated:Connect(togglePanel)
 
 -- Left Sidebar
 local Sidebar = Instance.new("Frame")
@@ -675,7 +690,7 @@ local function createTab(name, order)
 	indicator.Parent = tabBtn
 	registerElement(indicator, "Accent")
 	
-	tabBtn.MouseButton1Click:Connect(function()
+	tabBtn.Activated:Connect(function()
 		switchTab(name)
 	end)
 	
@@ -774,7 +789,7 @@ local function addFeature(tabName, name, type, data, order)
 		btnGrad.Parent = button
 		table.insert(ThemeRegistry.Gradients, btnGrad)
 		
-		button.MouseButton1Click:Connect(function()
+		button.Activated:Connect(function()
 			local s, e = pcall(data.Callback)
 			if not s then warn("Error: " .. tostring(e)) end
 		end)
@@ -811,7 +826,7 @@ local function addFeature(tabName, name, type, data, order)
 		end
 		updateVisual()
 		
-		toggleBtn.MouseButton1Click:Connect(function()
+		toggleBtn.Activated:Connect(function()
 			state = not state
 			updateVisual()
 			local s, e = pcall(data.Callback, state)
@@ -939,7 +954,7 @@ local function addFeature(tabName, name, type, data, order)
 		local open = false
 		local list
 		
-		dropBtn.MouseButton1Click:Connect(function()
+		dropBtn.Activated:Connect(function()
 			open = not open
 			arrow.Text = open and "▲" or "▼"
 			if open then
@@ -994,7 +1009,7 @@ local function addFeature(tabName, name, type, data, order)
 						btn.BackgroundTransparency = 1
 						btn.TextColor3 = currentTheme.TextSecondary
 					end)
-					btn.MouseButton1Click:Connect(function()
+					btn.Activated:Connect(function()
 						dropBtn.Text = opt
 						pcall(data.Callback, opt)
 						open = false
@@ -1058,7 +1073,7 @@ local function addFeature(tabName, name, type, data, order)
 		bStroke.Parent = bind
 		
 		local listening = false
-		bind.MouseButton1Click:Connect(function()
+		bind.Activated:Connect(function()
 			listening = true
 			bind.Text = "[ ... ]"
 			bind.TextColor3 = currentTheme.AccentStart
