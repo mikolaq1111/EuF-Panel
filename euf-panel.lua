@@ -310,9 +310,19 @@ local function makeDraggable(frame, dragHandle)
 		end
 	end)
 
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+
 	RunService.RenderStepped:Connect(function()
 		if frame and frame.Parent and frame.Visible then
-			frame.Position = frame.Position:Lerp(targetPos, 0.2)
+			if dragging then
+				frame.Position = frame.Position:Lerp(targetPos, 0.2)
+			else
+				targetPos = frame.Position
+			end
 		end
 	end)
 end
