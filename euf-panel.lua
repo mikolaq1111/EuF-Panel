@@ -30,11 +30,17 @@ local function getSafeParent()
 	return LocalPlayer:WaitForChild("PlayerGui")
 end
 local ParentGui = getSafeParent()
+local panelOpen = false
+local closedButtonPos = UDim2.new(0, 42, 0.5, 0)
 
 -- Clean old instances
 if ParentGui:FindFirstChild("EuF_Panel_Gui") then
 	ParentGui.EuF_Panel_Gui:Destroy()
 end
+local oldLidar = workspace.CurrentCamera:FindFirstChild("EuF_Lidar_Folder")
+if oldLidar then oldLidar:Destroy() end
+local oldThermalCC = Lighting:FindFirstChild("EuF_Thermal_CC")
+if oldThermalCC then oldThermalCC:Destroy() end
 
 -- ==========================================
 -- STATE & DEFAULTS
@@ -284,18 +290,25 @@ local function notify(title, text, duration)
 	end)
 end
 
--- Smooth Dragging Helper with Inertia/Lerp
+-- Smooth Dragging Helper with Inertia/Lerp and Viewport Clamping
 local function makeDraggable(frame, dragHandle, onClick)
 	local dragging = false
 	local dragInput, dragStart, startPos
 	local targetPos = frame.Position
-	local dragThreshold = 14 -- Slightly higher to prevent touch jitter on tablets/mobile
 	local isTracking = false
 	local dragOccurred = false
 
 	local function update(input)
 		local delta = input.Position - dragStart
-		targetPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		local newX = startPos.X.Scale * Camera.ViewportSize.X + startPos.X.Offset + delta.X
+		local newY = startPos.Y.Scale * Camera.ViewportSize.Y + startPos.Y.Offset + delta.Y
+		
+		-- Clamp to viewport bounds using actual size of frame
+		local size = frame.AbsoluteSize
+		newX = math.clamp(newX, 0, Camera.ViewportSize.X - size.X)
+		newY = math.clamp(newY, 0, Camera.ViewportSize.Y - size.Y)
+		
+		targetPos = UDim2.new(0, newX, 0, newY)
 	end
 
 	dragHandle.InputBegan:Connect(function(input)
@@ -330,6 +343,7 @@ local function makeDraggable(frame, dragHandle, onClick)
 	UserInputService.InputChanged:Connect(function(input)
 		if isTracking then
 			local delta = input.Position - dragStart
+			local dragThreshold = (input.UserInputType == Enum.UserInputType.Touch) and 24 or 10
 			if not dragging and delta.Magnitude > dragThreshold then
 				dragging = true
 				dragOccurred = true
@@ -357,6 +371,9 @@ local function makeDraggable(frame, dragHandle, onClick)
 		if frame and frame.Parent and frame.Visible then
 			if dragging then
 				frame.Position = frame.Position:Lerp(targetPos, 0.2)
+				if frame.Name == "ToggleButton" and not panelOpen then
+					closedButtonPos = targetPos
+				end
 			else
 				targetPos = frame.Position
 			end
@@ -370,10 +387,15 @@ end
 local MainPanel = Instance.new("Frame")
 MainPanel.Name = "MainPanel"
 MainPanel.Size = UDim2.new(0, 650, 0, 420)
-MainPanel.Position = UDim2.new(0, -700, 0.5, -210) -- Starts closed off-screen
+MainPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+MainPanel.Position = UDim2.new(0, -325, 0.5, 0) -- Starts closed off-screen
 MainPanel.BackgroundColor3 = currentTheme.Bg
 MainPanel.Parent = ScreenGui
 registerElement(MainPanel, "Bg")
+
+local MainScale = Instance.new("UIScale")
+MainScale.Name = "MainScale"
+MainScale.Parent = MainPanel
 
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 10)
@@ -395,7 +417,8 @@ registerRotatingGradient(mainStrokeGrad)
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Name = "ToggleButton"
 ToggleButton.Size = UDim2.new(0, 55, 0, 55)
-ToggleButton.Position = UDim2.new(0, 15, 0.5, -25) -- Left edge
+ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+ToggleButton.Position = UDim2.new(0, 42, 0.5, 0) -- Left edge
 ToggleButton.BackgroundColor3 = currentTheme.Bg
 ToggleButton.Text = "EuF"
 ToggleButton.Font = Enum.Font.GothamBold
@@ -403,6 +426,10 @@ ToggleButton.TextSize = 16
 ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleButton.Parent = ScreenGui
 registerElement(ToggleButton, "Bg")
+
+local BtnScale = Instance.new("UIScale")
+BtnScale.Name = "BtnScale"
+BtnScale.Parent = ToggleButton
 
 local tBtnCorner = Instance.new("UICorner")
 tBtnCorner.CornerRadius = UDim.new(0.5, 0)
@@ -418,10 +445,6 @@ tBtnGrad.Parent = tBtnStroke
 table.insert(ThemeRegistry.Gradients, tBtnGrad)
 registerRotatingGradient(tBtnGrad)
 
--- Toggle Functionality
-local targetWidth = 650
-local targetHeight = 420
-local panelOpen = false
 local lastToggle = 0
 
 local function togglePanel()
@@ -430,11 +453,21 @@ local function togglePanel()
 
 	panelOpen = not panelOpen
 	local viewportSize = Camera.ViewportSize
-	local targetPanelPos = panelOpen and UDim2.new(0.5, -targetWidth/2, 0.5, -targetHeight/2) or UDim2.new(0, -targetWidth - 50, 0.5, -targetHeight/2)
-	local targetButtonPos = panelOpen and UDim2.new(0.5, -targetWidth/2 - 70, 0.5, -25) or UDim2.new(0, 15, 0.5, -25)
+	local scaleX = viewportSize.X / 1366
+	local scaleY = viewportSize.Y / 768
+	local baseScale = math.clamp(math.min(scaleX, scaleY), 0.75, 1.35)
 	
-	if viewportSize.X < 700 and panelOpen then
-		targetButtonPos = UDim2.new(0.5, targetWidth/2 - 25, 0.5, -targetHeight/2 - 35)
+	local targetPanelPos = panelOpen and UDim2.new(0.5, 0, 0.5, 0) or UDim2.new(0, -targetWidth/2 - 100, 0.5, 0)
+	local targetButtonPos
+	
+	if panelOpen then
+		if viewportSize.X < 700 then
+			targetButtonPos = UDim2.new(0.5, (targetWidth/2 - 25) * baseScale, 0.5, (-targetHeight/2 - 35) * baseScale)
+		else
+			targetButtonPos = UDim2.new(0.5, (-targetWidth/2 - 40) * baseScale, 0.5, 0)
+		end
+	else
+		targetButtonPos = closedButtonPos
 	end
 	
 	local panelStyle = panelOpen and Enum.EasingStyle.Back or Enum.EasingStyle.Quad
@@ -595,18 +628,30 @@ local function updateInterfaceScaling()
 		targetHeight = viewportSize.Y - 20
 	end
 	
+	-- Calculate baseScale dynamically based on screen resolution
+	local scaleX = viewportSize.X / 1366
+	local scaleY = viewportSize.Y / 768
+	local baseScale = math.clamp(math.min(scaleX, scaleY), 0.75, 1.35)
+	
+	if MainPanel:FindFirstChild("MainScale") then
+		MainPanel.MainScale.Scale = baseScale
+	end
+	if ToggleButton:FindFirstChild("BtnScale") then
+		ToggleButton.BtnScale.Scale = baseScale
+	end
+	
 	MainPanel.Size = UDim2.new(0, targetWidth, 0, targetHeight)
 	
 	if panelOpen then
-		MainPanel.Position = UDim2.new(0.5, -targetWidth/2, 0.5, -targetHeight/2)
+		MainPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
 		if viewportSize.X < 700 then
-			ToggleButton.Position = UDim2.new(0.5, targetWidth/2 - 25, 0.5, -targetHeight/2 - 35)
+			ToggleButton.Position = UDim2.new(0.5, (targetWidth/2 - 25) * baseScale, 0.5, (-targetHeight/2 - 35) * baseScale)
 		else
-			ToggleButton.Position = UDim2.new(0.5, -targetWidth/2 - 70, 0.5, -25)
+			ToggleButton.Position = UDim2.new(0.5, (-targetWidth/2 - 40) * baseScale, 0.5, 0)
 		end
 	else
-		MainPanel.Position = UDim2.new(0, -targetWidth - 50, 0.5, -targetHeight/2)
-		ToggleButton.Position = UDim2.new(0, 15, 0.5, -25)
+		MainPanel.Position = UDim2.new(0, -targetWidth/2 - 100, 0.5, 0)
+		ToggleButton.Position = closedButtonPos
 	end
 	
 	if targetWidth < 500 then
@@ -1006,17 +1051,26 @@ local function addFeature(tabName, name, type, data, order)
 		end
 		
 		handle.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then active = true end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				active = true
+				tabFrame.ScrollingEnabled = false
+			end
 		end)
 		UserInputService.InputEnded:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then active = false end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				active = false
+				tabFrame.ScrollingEnabled = true
+			end
 		end)
 		UserInputService.InputChanged:Connect(function(input)
-			if active and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then update(input) end
+			if active and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				update(input)
+			end
 		end)
 		track.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				active = true
+				tabFrame.ScrollingEnabled = false
 				update(input)
 			end
 		end)
@@ -2115,6 +2169,167 @@ local function getPlayersDropdown()
 end
 
 -- ==========================================
+-- THERMAL IMAGER & LIDAR ENGINE
+-- ==========================================
+local thermalActive = false
+local thermalHighlights = {}
+local thermalCC = nil
+
+local function applyThermal(char)
+	if not char then return end
+	local tHighlight = char:FindFirstChild("EuF_Thermal_Highlight")
+	if not tHighlight then
+		tHighlight = Instance.new("Highlight")
+		tHighlight.Name = "EuF_Thermal_Highlight"
+		tHighlight.FillColor = Color3.fromRGB(255, 60, 0)
+		tHighlight.OutlineColor = Color3.fromRGB(255, 255, 0)
+		tHighlight.FillTransparency = 0.1
+		tHighlight.OutlineTransparency = 0
+		tHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		tHighlight.Parent = char
+		table.insert(thermalHighlights, tHighlight)
+	end
+	tHighlight.Enabled = true
+end
+
+local function removeThermal(char)
+	if not char then return end
+	local tHighlight = char:FindFirstChild("EuF_Thermal_Highlight")
+	if tHighlight then
+		tHighlight:Destroy()
+	end
+end
+
+local function toggleThermal(state)
+	thermalActive = state
+	if not thermalCC then
+		thermalCC = Lighting:FindFirstChild("EuF_Thermal_CC")
+		if not thermalCC then
+			thermalCC = Instance.new("ColorCorrectionEffect")
+			thermalCC.Name = "EuF_Thermal_CC"
+			thermalCC.Parent = Lighting
+		end
+	end
+	
+	if state then
+		thermalCC.TintColor = Color3.fromRGB(15, 20, 60)
+		thermalCC.Brightness = -0.15
+		thermalCC.Contrast = 1.6
+		thermalCC.Saturation = -0.6
+		thermalCC.Enabled = true
+		notify("Thermal Vision", "Thermal visual imaging engaged.", 3)
+	else
+		thermalCC.Enabled = false
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then
+				removeThermal(p.Character)
+			end
+		end
+		table.clear(thermalHighlights)
+		notify("Thermal Vision", "Thermal visual imaging disengaged.", 2)
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	if thermalActive then
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p.Character then
+				applyThermal(p.Character)
+			end
+		end
+	end
+end)
+
+local lidarActive = false
+local lidarPoints = {}
+local lidarConnection = nil
+local lidarFolder = nil
+local lidarScanIndex = 0
+
+local function toggleLidar(state)
+	lidarActive = state
+	if lidarConnection then
+		lidarConnection:Disconnect()
+		lidarConnection = nil
+	end
+	
+	if not lidarFolder then
+		lidarFolder = workspace.CurrentCamera:FindFirstChild("EuF_Lidar_Folder")
+		if not lidarFolder then
+			lidarFolder = Instance.new("Folder")
+			lidarFolder.Name = "EuF_Lidar_Folder"
+			lidarFolder.Parent = workspace.CurrentCamera
+		end
+	end
+	
+	if state then
+		notify("LIDAR Scanner", "LIDAR active. Scanning environment...", 3)
+		lidarConnection = RunService.Heartbeat:Connect(function()
+			local centerPos = Camera.CFrame.Position
+			local lookCFrame = Camera.CFrame
+			local numRaysPerFrame = 60
+			local lidarMaxDistance = 150
+			local lidarSpread = 0.5
+			
+			for i = 1, numRaysPerFrame do
+				lidarScanIndex = (lidarScanIndex + 1) % 500
+				local theta = lidarScanIndex * 0.1
+				local r = (lidarScanIndex / 500) * lidarSpread
+				local offset = Vector3.new(math.cos(theta) * r, math.sin(theta) * r, -1).Unit
+				local rayDirection = (lookCFrame * CFrame.new(offset * lidarMaxDistance)).Position - centerPos
+				rayDirection = rayDirection.Unit * lidarMaxDistance
+				
+				local params = RaycastParams.new()
+				params.FilterDescendantsInstances = {LocalPlayer.Character, lidarFolder}
+				params.FilterType = Enum.RaycastFilterType.Exclude
+				
+				local result = workspace:Raycast(centerPos, rayDirection, params)
+				if result then
+					local hitPos = result.Position
+					local hitDist = (hitPos - centerPos).Magnitude
+					
+					local pt = Instance.new("Part")
+					pt.Size = Vector3.new(0.18, 0.18, 0.18)
+					pt.Position = hitPos
+					pt.Anchored = true
+					pt.CanCollide = false
+					pt.CanTouch = false
+					pt.CanQuery = false
+					pt.Material = Enum.Material.Neon
+					
+					local ratio = math.clamp(hitDist / lidarMaxDistance, 0, 1)
+					pt.Color = Color3.fromHSV(ratio * 0.7, 1, 1)
+					pt.Parent = lidarFolder
+					
+					table.insert(lidarPoints, pt)
+					
+					task.spawn(function()
+						local tween = TweenService:Create(pt, TweenInfo.new(3, Enum.EasingStyle.Linear), {Transparency = 1, Size = Vector3.zero})
+						tween:Play()
+						tween.Completed:Connect(function()
+							pt:Destroy()
+							local idx = table.find(lidarPoints, pt)
+							if idx then table.remove(lidarPoints, idx) end
+						end)
+					end)
+				end
+			end
+			
+			while #lidarPoints > 1500 do
+				local old = table.remove(lidarPoints, 1)
+				if old then old:Destroy() end
+			end
+		end)
+	else
+		if lidarFolder then
+			lidarFolder:ClearAllChildren()
+		end
+		table.clear(lidarPoints)
+		notify("LIDAR Scanner", "LIDAR scanner disengaged.", 2)
+	end
+end
+
+-- ==========================================
 -- EXPLICIT FEATURE DEFINITIONS (270 FUNCTIONS)
 -- ==========================================
 
@@ -2688,6 +2903,14 @@ addFeature("Visuals", "Tracer Color Schemes Preset", "Dropdown", {Options = {"Ac
 		if data.Tracer then data.Tracer.BackgroundColor3 = color end
 	end
 end}, 30)
+
+addFeature("Visuals", "Visual Thermal Imager (FLIR)", "Toggle", {Default = false, Callback = function(s)
+	toggleThermal(s)
+end}, 31)
+
+addFeature("Visuals", "LIDAR Scanning Radar", "Toggle", {Default = false, Callback = function(s)
+	toggleLidar(s)
+end}, 32)
 
 
 -- TAB 4: TELEPORTS (NAVIGATION)
@@ -3969,6 +4192,11 @@ addFeature("Settings", "Panel Self-Destruct Unload", "Button", {Text = "Unload",
 	Lighting.Brightness = LightingState.Brightness
 	Lighting.GlobalShadows = LightingState.GlobalShadows
 	Lighting.FogEnd = LightingState.FogEnd
+	
+	if thermalActive then toggleThermal(false) end
+	if lidarActive then toggleLidar(false) end
+	if thermalCC then thermalCC:Destroy() end
+	if lidarFolder then lidarFolder:Destroy() end
 	
 	screenBlur:Destroy()
 	screenCC:Destroy()
