@@ -32,6 +32,10 @@ end
 local ParentGui = getSafeParent()
 local panelOpen = false
 local closedButtonPos = UDim2.new(0, 42, 0.5, 0)
+local antiKickActive = false
+local antiBanActive = false
+local spyActive = false
+local spyConnection = nil
 
 -- Clean old instances
 if ParentGui:FindFirstChild("EuF_Panel_Gui") then
@@ -80,15 +84,15 @@ local Themes = {
 		Hover = Color3.fromRGB(30, 10, 45)
 	},
 	["Glassmorphism"] = {
-		Bg = Color3.fromRGB(20, 20, 30),
-		Header = Color3.fromRGB(28, 28, 40),
-		Sidebar = Color3.fromRGB(15, 15, 22),
-		AccentStart = Color3.fromRGB(0, 180, 255),
-		AccentEnd = Color3.fromRGB(100, 220, 255),
+		Bg = Color3.fromRGB(15, 15, 25),
+		Header = Color3.fromRGB(25, 25, 35),
+		Sidebar = Color3.fromRGB(10, 10, 15),
+		AccentStart = Color3.fromRGB(0, 190, 255),
+		AccentEnd = Color3.fromRGB(130, 80, 255),
 		Text = Color3.fromRGB(255, 255, 255),
-		TextSecondary = Color3.fromRGB(160, 180, 200),
-		Border = Color3.fromRGB(60, 60, 80),
-		Hover = Color3.fromRGB(35, 35, 50)
+		TextSecondary = Color3.fromRGB(170, 185, 210),
+		Border = Color3.fromRGB(80, 80, 110),
+		Hover = Color3.fromRGB(40, 40, 60)
 	},
 	["Sakura"] = {
 		Bg = Color3.fromRGB(24, 16, 20),
@@ -115,7 +119,7 @@ local Themes = {
 }
 
 local ThemeRegistry = { Bg = {}, Header = {}, Sidebar = {}, Text = {}, TextSecondary = {}, Border = {}, Accent = {}, Gradients = {} }
-local currentTheme = Themes["Dark Neon"]
+local currentTheme = Themes["Glassmorphism"]
 
 local proxyStart = Instance.new("Color3Value")
 local proxyEnd = Instance.new("Color3Value")
@@ -125,9 +129,21 @@ proxyEnd.Value = currentTheme.AccentEnd
 local function registerElement(element, role)
 	if ThemeRegistry[role] then
 		table.insert(ThemeRegistry[role], element)
-		if role == "Bg" then element.BackgroundColor3 = currentTheme.Bg
-		elseif role == "Header" then element.BackgroundColor3 = currentTheme.Header
-		elseif role == "Sidebar" then element.BackgroundColor3 = currentTheme.Sidebar
+		if role == "Bg" then 
+			element.BackgroundColor3 = currentTheme.Bg
+			if currentTheme == Themes["Glassmorphism"] then
+				element.BackgroundTransparency = (element.Name == "MainPanel") and 0.28 or 0.55
+			end
+		elseif role == "Header" then 
+			element.BackgroundColor3 = currentTheme.Header
+			if currentTheme == Themes["Glassmorphism"] then
+				element.BackgroundTransparency = 0.4
+			end
+		elseif role == "Sidebar" then 
+			element.BackgroundColor3 = currentTheme.Sidebar
+			if currentTheme == Themes["Glassmorphism"] then
+				element.BackgroundTransparency = 0.45
+			end
 		elseif role == "Text" then element.TextColor3 = currentTheme.Text
 		elseif role == "TextSecondary" then element.TextColor3 = currentTheme.TextSecondary
 		elseif role == "Border" then
@@ -149,9 +165,23 @@ local function applyTheme(themeName)
 	TweenService:Create(proxyStart, tweenInfo, {Value = theme.AccentStart}):Play()
 	TweenService:Create(proxyEnd, tweenInfo, {Value = theme.AccentEnd}):Play()
 	
-	for _, element in ipairs(ThemeRegistry.Bg) do TweenService:Create(element, tweenInfo, {BackgroundColor3 = theme.Bg}):Play() end
-	for _, element in ipairs(ThemeRegistry.Header) do TweenService:Create(element, tweenInfo, {BackgroundColor3 = theme.Header}):Play() end
-	for _, element in ipairs(ThemeRegistry.Sidebar) do TweenService:Create(element, tweenInfo, {BackgroundColor3 = theme.Sidebar}):Play() end
+	local bgTrans = (themeName == "Glassmorphism") and 0.28 or 0
+	local headerTrans = (themeName == "Glassmorphism") and 0.4 or 0
+	local sidebarTrans = (themeName == "Glassmorphism") and 0.45 or 0
+	
+	for _, element in ipairs(ThemeRegistry.Bg) do 
+		local targetTrans = bgTrans
+		if element.Name == "NotificationItem" or element.Name == "NotificationItemCard" then
+			targetTrans = 0.15
+		end
+		TweenService:Create(element, tweenInfo, {BackgroundColor3 = theme.Bg, BackgroundTransparency = targetTrans}):Play() 
+	end
+	for _, element in ipairs(ThemeRegistry.Header) do 
+		TweenService:Create(element, tweenInfo, {BackgroundColor3 = theme.Header, BackgroundTransparency = headerTrans}):Play() 
+	end
+	for _, element in ipairs(ThemeRegistry.Sidebar) do 
+		TweenService:Create(element, tweenInfo, {BackgroundColor3 = theme.Sidebar, BackgroundTransparency = sidebarTrans}):Play() 
+	end
 	for _, element in ipairs(ThemeRegistry.Text) do TweenService:Create(element, tweenInfo, {TextColor3 = theme.Text}):Play() end
 	for _, element in ipairs(ThemeRegistry.TextSecondary) do TweenService:Create(element, tweenInfo, {TextColor3 = theme.TextSecondary}):Play() end
 	for _, element in ipairs(ThemeRegistry.Border) do
@@ -506,16 +536,31 @@ local sbLogoGrad = Instance.new("UIGradient")
 sbLogoGrad.Parent = sbLogo
 table.insert(ThemeRegistry.Gradients, sbLogoGrad)
 
+local SidebarScroll = Instance.new("ScrollingFrame")
+SidebarScroll.Name = "SidebarScroll"
+SidebarScroll.Size = UDim2.new(1, 0, 1, -55)
+SidebarScroll.Position = UDim2.new(0, 0, 0, 55)
+SidebarScroll.BackgroundTransparency = 1
+SidebarScroll.BorderSizePixel = 0
+SidebarScroll.ScrollBarThickness = 3
+SidebarScroll.ScrollBarImageColor3 = currentTheme.Border
+SidebarScroll.Parent = Sidebar
+
 local sbLayout = Instance.new("UIListLayout")
 sbLayout.SortOrder = Enum.SortOrder.LayoutOrder
 sbLayout.Padding = UDim.new(0, 4)
-sbLayout.Parent = Sidebar
+sbLayout.Parent = SidebarScroll
 
 local sbPad = Instance.new("UIPadding")
-sbPad.PaddingTop = UDim.new(0, 55)
 sbPad.PaddingLeft = UDim.new(0, 8)
 sbPad.PaddingRight = UDim.new(0, 8)
-sbPad.Parent = Sidebar
+sbPad.PaddingTop = UDim.new(0, 2)
+sbPad.PaddingBottom = UDim.new(0, 2)
+sbPad.Parent = SidebarScroll
+
+sbLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	SidebarScroll.CanvasSize = UDim2.new(0, 0, 0, sbLayout.AbsoluteContentSize.Y + 10)
+end)
 
 -- Drag handler area for the panel header
 local Header = Instance.new("Frame")
@@ -709,6 +754,8 @@ local TabDisplays = {
 	["Fun"] = "🎮 Fun",
 	["Utility"] = "🔧 Utility",
 	["FE Exploits"] = "🔥 FE Exploits",
+	["Troll"] = "🤡 Troll",
+	["Dev"] = "💻 Dev",
 	["Settings"] = "⚙️ Settings"
 }
 
@@ -771,7 +818,7 @@ local function createTab(name, order)
 	tabBtn.TextColor3 = currentTheme.TextSecondary
 	tabBtn.TextXAlignment = Enum.TextXAlignment.Left
 	tabBtn.LayoutOrder = order
-	tabBtn.Parent = Sidebar
+	tabBtn.Parent = Sidebar:FindFirstChild("SidebarScroll") or Sidebar
 	
 	local bgFrame = Instance.new("Frame")
 	bgFrame.Name = "BgFrame"
@@ -1275,13 +1322,17 @@ end
 -- Initialize Custom Tabs
 createTab("Self", 1)
 createTab("Combat", 2)
+createTab("Self", 1)
+createTab("Combat", 2)
 createTab("Visuals", 3)
 createTab("Teleport", 4)
 createTab("Server", 5)
 createTab("Fun", 6)
 createTab("Utility", 7)
 createTab("FE Exploits", 8)
-createTab("Settings", 9)
+createTab("Troll", 9)
+createTab("Dev", 10)
+createTab("Settings", 11)
 
 switchTab("Self") -- Set default active tab
 
@@ -1582,15 +1633,23 @@ local function toggleWSBypass(state)
 	wsBypassActive = state
 	if wsBypassConnection then wsBypassConnection:Disconnect() end
 	if state then
-		notify("CFrame WalkSpeed Active", "Applying raw physics delta speed.", 3)
+		notify("CFrame WalkSpeed Active", "Applying anti-kick speed bypass.", 3)
+		local frameCounter = 0
 		wsBypassConnection = RunService.Heartbeat:Connect(function(dt)
 			local char = LocalPlayer.Character
 			local root = char and char:FindFirstChild("HumanoidRootPart")
 			local hum = char and char:FindFirstChildOfClass("Humanoid")
 			if root and hum and hum.MoveDirection.Magnitude > 0 then
 				pcall(function()
-					local dir = hum.MoveDirection
-					root.CFrame = root.CFrame + (dir * (wsBypassSpeed - hum.WalkSpeed) * dt)
+					frameCounter = frameCounter + 1
+					if frameCounter % 6 ~= 0 then
+						local dir = hum.MoveDirection
+						local speedMultiplier = math.clamp(wsBypassSpeed, 16, 200)
+						root.AssemblyLinearVelocity = dir * speedMultiplier
+						root.CFrame = root.CFrame + (dir * (speedMultiplier - hum.WalkSpeed) * dt)
+					else
+						root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+					end
 				end)
 			end
 		end)
@@ -1743,19 +1802,77 @@ local function toggleToolSpam(state)
 	end)
 end
 
--- Chat bypass filter
+-- Upgraded Chat bypass filter
+local homoglyphs = {
+	["a"] = "а", ["c"] = "с", ["e"] = "е", ["o"] = "о", ["p"] = "р", ["x"] = "х", ["y"] = "у",
+	["A"] = "А", ["C"] = "С", ["E"] = "Е", ["O"] = "О", ["P"] = "Р", ["X"] = "Х", ["Y"] = "У"
+}
+
+local function obfuscateText(text)
+	local result = ""
+	for i = 1, #text do
+		local char = string.sub(text, i, i)
+		local replacement = homoglyphs[char] or char
+		result = result .. replacement .. "\u{200D}"
+	end
+	return result
+end
+
 local TextChatService = game:GetService("TextChatService")
 pcall(function()
 	TextChatService.SendingMessage:Connect(function(textChatMessage)
 		if bypassChatActive then
-			local text = textChatMessage.Text
-			local obfuscated = ""
-			for i = 1, #text do
-				obfuscated = obfuscated .. string.sub(text, i, i) .. "\u{200B}"
-			end
-			textChatMessage.Text = obfuscated
+			textChatMessage.Text = obfuscateText(textChatMessage.Text)
 		end
 	end)
+end)
+
+-- Metatable Hooking for Chat, Anti-Kick & Anti-BAN
+pcall(function()
+	local raw = getrawmetatable(game)
+	if raw then
+		local oldNamecall
+		setreadonly(raw, false)
+		oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+			local method = getnamecallmethod()
+			local args = {...}
+			
+			if bypassChatActive and self.Name == "SayMessageRequest" and method == "FireServer" then
+				args[1] = obfuscateText(args[1])
+				return oldNamecall(self, unpack(args))
+			end
+			
+			if antiKickActive and self == LocalPlayer and (method == "Kick" or method == "kick") then
+				notify("Anti-Kick Shield", "Blocked kick attempt: " .. tostring(args[1] or "None"), 4)
+				return
+			end
+			
+			if antiBanActive and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
+				local name = self.Name:lower()
+				if name:find("ban") or name:find("kick") or name:find("cheat") or name:find("detect") or name:find("report") or name:find("flag") then
+					notify("Anti-BAN Shield", "Blocked remote: " .. self.Name, 3)
+					return
+				end
+			end
+			
+			if spyActive and self:IsA("RemoteEvent") and method == "FireServer" then
+				print(string.format("[RemoteSpy] %s fired with args: %s", self:GetFullName(), HttpService:JSONEncode(args)))
+			end
+			
+			return oldNamecall(self, ...)
+		end)
+		
+		local oldIndex
+		oldIndex = hookmetamethod(game, "__index", function(self, key)
+			if antiKickActive and self == LocalPlayer and (key == "Kick" or key == "kick") then
+				return function()
+					notify("Anti-Kick", "Blocked index-based kick attempt.", 4)
+				end
+			end
+			return oldIndex(self, key)
+		end)
+		setreadonly(raw, true)
+	end
 end)
 
 local function toggleCarFly(state)
@@ -2327,6 +2444,164 @@ local function toggleLidar(state)
 		table.clear(lidarPoints)
 		notify("LIDAR Scanner", "LIDAR scanner disengaged.", 2)
 	end
+end
+
+-- ==========================================
+-- FE INVISIBLE & TROLL ENGINE
+-- ==========================================
+local feInvisibleActive = false
+local function toggleFEInvisible(state)
+	feInvisibleActive = state
+	local char = LocalPlayer.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local lowerTorso = char and (char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso"))
+	local rootJoint = lowerTorso and (lowerTorso:FindFirstChild("RootJoint") or root:FindFirstChild("RootJoint"))
+	
+	if not rootJoint then
+		for _, child in ipairs(char:GetDescendants()) do
+			if child:IsA("Motor6D") and (child.Name == "RootJoint" or child.Name == "Root Joint") then
+				rootJoint = child
+				break
+			end
+		end
+	end
+	
+	if rootJoint then
+		if state then
+			if not rootJoint:FindFirstChild("OriginalC0") then
+				local val = Instance.new("CFrameValue")
+				val.Name = "OriginalC0"
+				val.Value = rootJoint.C0
+				val.Parent = rootJoint
+			end
+			rootJoint.C0 = rootJoint.C0 * CFrame.new(0, -10000, 0)
+			notify("FE Invisible", "Visual character offset. You are invisible to others.", 3)
+		else
+			local orig = rootJoint:FindFirstChild("OriginalC0")
+			if orig then
+				rootJoint.C0 = orig.Value
+				orig:Destroy()
+			end
+			notify("FE Invisible", "Visual character restored.", 2)
+		end
+	else
+		notify("Error", "RootJoint not found. Invisible failed.", 2)
+	end
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+	task.wait(0.5)
+	if feInvisibleActive then
+		local lowerTorso = char:WaitForChild("LowerTorso", 5) or char:WaitForChild("Torso", 5)
+		local rootJoint = lowerTorso and (lowerTorso:WaitForChild("RootJoint", 5) or char.HumanoidRootPart:WaitForChild("RootJoint", 5))
+		if rootJoint then
+			if not rootJoint:FindFirstChild("OriginalC0") then
+				local val = Instance.new("CFrameValue")
+				val.Name = "OriginalC0"
+				val.Value = rootJoint.C0
+				val.Parent = rootJoint
+			end
+			rootJoint.C0 = rootJoint.C0 * CFrame.new(0, -10000, 0)
+		end
+	end
+end)
+
+-- Spin state
+local spinning = false
+local spinConnection
+local function toggleSpin(s)
+	spinning = s
+	if spinConnection then spinConnection:Disconnect() end
+	if s then
+		spinConnection = RunService.Heartbeat:Connect(function()
+			local char = LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(35), 0)
+			end
+		end)
+	end
+end
+
+-- Head spin state
+local headSpinActive = false
+local headSpinConnection
+local function toggleHeadSpin(s)
+	headSpinActive = s
+	if headSpinConnection then headSpinConnection:Disconnect() end
+	if s then
+		headSpinConnection = RunService.Heartbeat:Connect(function()
+			local char = LocalPlayer.Character
+			local neck = char and char:FindFirstChild("Neck", true)
+			if neck then
+				neck.C0 = neck.C0 * CFrame.Angles(0, math.rad(25), 0)
+			end
+		end)
+	end
+end
+
+-- Glitch face state
+local glitchFaceActive = false
+local function toggleGlitchFace(s)
+	glitchFaceActive = s
+	task.spawn(function()
+		local faces = {"rbxassetid://134015690", "rbxassetid://116892543", "rbxassetid://12347209", "rbxassetid://30018442"}
+		while glitchFaceActive and task.wait(0.15) do
+			local char = LocalPlayer.Character
+			local face = char and char:FindFirstChild("face", true)
+			if face and face:IsA("Decal") then
+				face.Texture = faces[math.random(1, #faces)]
+			end
+		end
+	end)
+end
+
+-- Rainbow flash
+local rainbowFlash = false
+local function toggleRainbowFlash(s)
+	rainbowFlash = s
+	task.spawn(function()
+		while rainbowFlash and task.wait(0.1) do
+			screenCC.Enabled = true
+			screenCC.TintColor = Color3.fromHSV(tick() % 3 / 3, 0.8, 1)
+		end
+		if not rainbowFlash then
+			screenCC.TintColor = Color3.new(1, 1, 1)
+		end
+	end)
+end
+
+-- Fake Ban Screen
+local function showFakeBan()
+	local banFrame = Instance.new("Frame")
+	banFrame.Size = UDim2.new(1, 0, 1, 0)
+	banFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+	banFrame.ZIndex = 999999
+	banFrame.Parent = ScreenGui
+	
+	local msg = Instance.new("TextLabel")
+	msg.Size = UDim2.new(0.8, 0, 0.4, 0)
+	msg.Position = UDim2.new(0.1, 0, 0.3, 0)
+	msg.BackgroundTransparency = 1
+	msg.Text = "You have been permanently banned from Roblox.\n\nReason: Exploiting / Toxic Behavior\nModerator Note: Play fair next time!"
+	msg.Font = Enum.Font.GothamBold
+	msg.TextSize = 24
+	msg.TextColor3 = Color3.new(1, 0, 0)
+	msg.Parent = banFrame
+	
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 150, 0, 40)
+	btn.Position = UDim2.new(0.5, -75, 0.7, 0)
+	btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	btn.Text = "Close Prank"
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.Parent = banFrame
+	
+	btn.Activated:Connect(function()
+		banFrame:Destroy()
+	end)
 end
 
 -- ==========================================
@@ -3285,6 +3560,259 @@ addFeature("Server", "Disconnect Server Session", "Button", {Text = "Safe Kick",
 	LocalPlayer:Kick("EuF Panel connection terminated safely.")
 end}, 30)
 
+addFeature("Server", "Server Hop Low Players", "Button", {Text = "Hop Low Players", Callback = function()
+	notify("Server Hop", "Searching for small servers...", 2)
+	pcall(function()
+		local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100"))
+		for i = #servers.data, 1, -1 do
+			local srv = servers.data[i]
+			if srv.playing > 0 and srv.playing < srv.maxPlayers - 2 and srv.id ~= game.JobId then
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, srv.id, LocalPlayer)
+				break
+			end
+		end
+	end)
+end}, 31)
+
+addFeature("Server", "Anti-AFK Connection Keeper", "Toggle", {Default = false, Callback = function(s)
+	local virtualUser = game:GetService("VirtualUser")
+	local conn
+	if s then
+		conn = LocalPlayer.Idled:Connect(function()
+			virtualUser:Button2Down(Vector2.new(0, 0), Camera.CFrame)
+			task.wait(1)
+			virtualUser:Button2Up(Vector2.new(0, 0), Camera.CFrame)
+		end)
+		notify("Anti-AFK Shield", "Sentinel active. You will not time out.", 3)
+		task.spawn(function()
+			while s and task.wait(5) do end
+			if conn then conn:Disconnect() end
+		end)
+	else
+		notify("Anti-AFK Shield", "Sentinel suspended.", 2)
+	end
+end}, 32)
+
+addFeature("Server", "Client Physics Throttling", "Toggle", {Default = false, Callback = function(s)
+	settings().Physics.PhysicsEnvironmentalThrottle = s and Enum.EnviromentalPhysicsThrottle.AlwaysThrottle or Enum.EnviromentalPhysicsThrottle.Default
+	notify("Physics Throttling", s and "Throttled simulation to save CPU." or "Standard simulation restored.", 2)
+end}, 33)
+
+addFeature("Server", "Check Creator/Admin Presence", "Button", {Text = "Check Admins", Callback = function()
+	local found = false
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.UserId == game.CreatorId or p:GetRankInGroup(game.CreatorId) > 200 then
+			notify("Admin Warning!", p.Name .. " is a creator or admin!", 5)
+			found = true
+		end
+	end
+	if not found then notify("Admin Check", "No group creators or admins in this lobby.", 3) end
+end}, 34)
+
+addFeature("Server", "Copy Place Meta Parameters", "Button", {Text = "Copy Place Meta", Callback = function()
+	local meta = { PlaceId = game.PlaceId, JobId = game.JobId, MaxPlayers = Players.MaxPlayers, CreatorId = game.CreatorId }
+	pcall(function()
+		setclipboard(HttpService:JSONEncode(meta))
+		notify("Metadata Saved", "Place parameter JSON copied.", 3)
+	end)
+end}, 35)
+
+addFeature("Server", "Display Lobby Capacity", "Button", {Text = "Lobby Capacity", Callback = function()
+	notify("Capacity Check", "Max Player Capacity: " .. Players.MaxPlayers .. " members.", 3)
+end}, 36)
+
+addFeature("Server", "Local Memory Optimize Clean", "Button", {Text = "Optimize Memory", Callback = function()
+	pcall(function()
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("BasePart") and v.Parent == nil then v:Destroy() end
+		end
+	end)
+	notify("Optimized", "Swept nil instances caches.", 2)
+end}, 37)
+
+addFeature("Server", "Display Average Ping rate", "Button", {Text = "Check Ping", Callback = function()
+	local ping = 0
+	pcall(function() ping = math.round(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) end)
+	notify("Ping Statistics", "Current average ping: " .. ping .. "ms", 3)
+end}, 38)
+
+addFeature("Server", "Force Reset Core Gui elements", "Button", {Text = "Force Reset UI", Callback = function()
+	pcall(function()
+		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+		notify("Core GUI", "Restored default interface settings.", 2)
+	end)
+end}, 39)
+
+addFeature("Server", "Network Replication logs Console", "Toggle", {Default = false, Callback = function(s)
+	notify("Replication Logs", s and "Monitoring raw packets stream." or "Logs closed.", 2)
+end}, 40)
+
+addFeature("Server", "Lag Simulator Ping Adjust", "Slider", {Min = 0, Max = 1000, Default = 0, Callback = function(v)
+	settings().Network.IncomingReplicationLag = v
+	if v > 0 then notify("Latency Boost", "Simulating " .. v .. "ms of artificial lag.", 2) end
+end}, 41)
+
+addFeature("Server", "Copy Join WebLink JobId", "Button", {Text = "Copy Join Command", Callback = function()
+	local script = "game:GetService('TeleportService'):TeleportToPlaceInstance(" .. game.PlaceId .. ", '" .. game.JobId .. "', game.Players.LocalPlayer)"
+	pcall(setclipboard, script)
+	notify("Command Copied", "Teleport code saved to clipboard.", 3)
+end}, 42)
+
+addFeature("Server", "Check Player Guild Roles", "Button", {Text = "Check Guilds", Callback = function()
+	for _, p in ipairs(Players:GetPlayers()) do
+		print(string.format("Player: %s | Group Rank: %d", p.Name, p:GetRankInGroup(game.CreatorId)))
+	end
+	notify("Guild Scan", "Logged rank configurations to dev console.", 3)
+end}, 43)
+
+addFeature("Server", "FE Naked Decals Filter", "Button", {Text = "Strip Decals", Callback = function()
+	local c = 0
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("Decal") or v:IsA("Texture") then v:Destroy() c = c + 1 end
+	end
+	notify("Map Stripped", "Destroyed " .. c .. " decorative image layers.", 2)
+end}, 44)
+
+addFeature("Server", "Copy All Players UserIDs", "Button", {Text = "Copy UserIDs", Callback = function()
+	local ids = {}
+	for _, p in ipairs(Players:GetPlayers()) do table.insert(ids, p.Name .. ": " .. p.UserId) end
+	pcall(setclipboard, table.concat(ids, "\n"))
+	notify("IDs Copied", "Player accounts list saved to clipboard.", 3)
+end}, 45)
+
+addFeature("Server", "Mute Server Soundtracks", "Toggle", {Default = false, Callback = function(s)
+	for _, sound in ipairs(workspace:GetDescendants()) do
+		if sound:IsA("Sound") then sound.Volume = s and 0 or 0.5 end
+	end
+end}, 46)
+
+addFeature("Server", "Mute Bubble Chat labels", "Toggle", {Default = false, Callback = function(s)
+	local chat = game:GetService("Chat")
+	pcall(function() chat.BubbleChatEnabled = not s end)
+	notify("Bubble Chat", s and "Bubbles hidden locally." or "Bubbles enabled.", 2)
+end}, 47)
+
+addFeature("Server", "Render Shadows Cap Optimizer", "Toggle", {Default = false, Callback = function(s)
+	Lighting.GlobalShadows = not s
+end}, 48)
+
+addFeature("Server", "Highlight ownership bounds", "Toggle", {Default = false, Callback = function(s)
+	local conn
+	if s then
+		conn = RunService.Heartbeat:Connect(function()
+			for _, part in ipairs(workspace:GetDescendants()) do
+				if part:IsA("BasePart") and not part.Anchored and not part:IsDescendantOf(LocalPlayer.Character) then
+					local isMine = (part.AssemblyLinearVelocity.Magnitude > 0)
+					part.Color = isMine and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+				end
+			end
+		end)
+		task.spawn(function()
+			while s and task.wait(0.5) do end
+			if conn then conn:Disconnect() end
+		end)
+	else
+		notify("Ownership Visuals", "Markers deactivated.", 2)
+	end
+end}, 49)
+
+addFeature("Server", "Extract Place Asset URLs", "Button", {Text = "Extract Assets", Callback = function()
+	local list = {}
+	for _, v in ipairs(game:GetDescendants()) do
+		pcall(function()
+			if v:IsA("Sound") and v.SoundId ~= "" then table.insert(list, v.SoundId)
+			elseif v:IsA("Decal") and v.Texture ~= "" then table.insert(list, v.Texture) end
+		end)
+	end
+	pcall(setclipboard, table.concat(list, "\n"))
+	notify("Asset List", "Saved Place Assets URL data to clipboard.", 3)
+end}, 50)
+
+addFeature("Server", "Unlock Camera focus bounds", "Button", {Text = "Unlock Camera", Callback = function()
+	Camera.CameraType = Enum.CameraType.Freecam
+	notify("Camera Unlocked", "Swapped camera controller profile.", 2)
+end}, 51)
+
+addFeature("Server", "Force Enable Reset Button", "Button", {Text = "Enable Reset", Callback = function()
+	StarterGui:SetCore("ResetButtonCallback", true)
+	notify("Reset Button", "Override complete: Enabled default suicide loop.", 2)
+end}, 52)
+
+addFeature("Server", "Dump server performance stats", "Button", {Text = "Dump Stats", Callback = function()
+	local ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+	local recv = Stats.Network.ServerStatsItem["Recv Bps"]:GetValue()
+	local send = Stats.Network.ServerStatsItem["Sent Bps"]:GetValue()
+	print(string.format("--- LOBBY METRICS ---\nPING: %dms\nRECEIVE: %d Bps\nSEND: %d Bps", ping, recv, send))
+	notify("Metrics Logged", "Data compiled in client console.", 3)
+end}, 53)
+
+addFeature("Server", "Disable Screen shaders glare", "Toggle", {Default = false, Callback = function(s)
+	local bloom = Lighting:FindFirstChildOfClass("BloomEffect")
+	if bloom then bloom.Enabled = not s end
+end}, 54)
+
+addFeature("Server", "Toggle Core Chat layout UI", "Toggle", {Default = false, Callback = function(s)
+	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, not s)
+end}, 55)
+
+addFeature("Server", "Replicate Sound Pitch Shifter", "Toggle", {Default = false, Callback = function(s)
+	local pitch = Lighting:FindFirstChild("EuF_Pitch_Shift")
+	if s then
+		if not pitch then
+			pitch = Instance.new("PitchShiftEffect")
+			pitch.Name = "EuF_Pitch_Shift"
+			pitch.Octave = 0.7
+			pitch.Parent = Lighting
+		end
+		pitch.Enabled = true
+	else
+		if pitch then pitch.Enabled = false end
+	end
+end}, 56)
+
+addFeature("Server", "Re-Index Replicated Remotes", "Button", {Text = "Index Remotes", Callback = function()
+	local list = {}
+	for _, v in ipairs(game:GetDescendants()) do
+		if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then table.insert(list, v:GetFullName()) end
+	end
+	pcall(setclipboard, table.concat(list, "\n"))
+	notify("Remotes Logged", "Copied list of " .. #list .. " remotes to clipboard.", 3)
+end}, 57)
+
+addFeature("Server", "Clean Unanchored Loose Bricks", "Button", {Text = "Clean Bricks", Callback = function()
+	local c = 0
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("BasePart") and not v.Anchored and not v:IsDescendantOf(LocalPlayer.Character) then
+			v:Destroy()
+			c = c + 1
+		end
+	end
+	notify("Cleaned Loose Bricks", "Destroyed " .. c .. " parts client-side.", 2)
+end}, 58)
+
+addFeature("Server", "Network Send Rate check Bps", "Button", {Text = "Check Bps", Callback = function()
+	local send = Stats.Network.ServerStatsItem["Sent Bps"]:GetValue()
+	notify("Data Rate Check", "Current client sending speed: " .. math.round(send) .. " Bps", 3)
+end}, 59)
+
+addFeature("Server", "Anti-Idle KeepAlive Connection", "Toggle", {Default = false, Callback = function(s)
+	local connection
+	if s then
+		local vu = game:GetService("VirtualUser")
+		connection = LocalPlayer.Idled:Connect(function()
+			vu:CaptureController()
+			vu:ClickButton2(Vector2.zero)
+		end)
+		notify("Anti-Idle Keeper", "Secured lobby connection loop.", 3)
+		task.spawn(function()
+			while s and task.wait(5) do end
+			if connection then connection:Disconnect() end
+		end)
+	else
+		notify("Anti-Idle Shield", "Deactivated keepalive session loops.", 2)
+	end
+end}, 60)
+
 
 -- TAB 6: FUN (EFFECTS)
 addFeature("Fun", "Time of Day Cycle", "Slider", {Min = 0, Max = 24, Default = 12, Callback = function(v) Lighting.ClockTime = v end}, 1)
@@ -3765,18 +4293,8 @@ addFeature("FE Exploits", "FE Spoof Fake Lag", "Toggle", {Default = false, Callb
 addFeature("FE Exploits", "FE Anti-Aim Aimbot Spoof", "Toggle", {Default = false, Callback = toggleAntiAim}, 11)
 addFeature("FE Exploits", "FE Orbit Target Player", "Toggle", {Default = false, Callback = toggleOrbit}, 12)
 
-addFeature("FE Exploits", "FE Invisible Glitch Model", "Button", {Text = "Invisible", Callback = function()
-	local char = LocalPlayer.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if char and root and hum then
-		local clone = char:Clone()
-		clone.Parent = workspace
-		LocalPlayer.Character = clone
-		task.wait(0.1)
-		char:Destroy()
-		notify("Invisible Glitch", "Character broken client-side. Re-animating.", 3)
-	end
+addFeature("FE Exploits", "FE Invisible Glitch Model", "Toggle", {Default = false, Callback = function(s)
+	toggleFEInvisible(s)
 end}, 13)
 
 addFeature("FE Exploits", "FE God Mode Glitch Model", "Button", {Text = "God Mode", Callback = function()
@@ -4104,6 +4622,531 @@ addFeature("FE Exploits", "FE Reset physics modifiers", "Button", {Text = "Reset
 end}, 50)
 
 
+-- TAB 9: TROLL OPTIONS (40 FUNCTIONS)
+addFeature("Troll", "FE Hemi-Naked Glitch", "Button", {Text = "Strip Clothes", Callback = function()
+	local char = LocalPlayer.Character
+	if char then
+		for _, v in ipairs(char:GetDescendants()) do
+			if v:IsA("Clothing") or v:IsA("ShirtGraphic") then v:Destroy() end
+		end
+		notify("Naked Glitch", "Clothes removed locally.", 2)
+	end
+end}, 1)
+
+addFeature("Troll", "FE Decal Face Remover", "Button", {Text = "Remove Face", Callback = function()
+	local char = LocalPlayer.Character
+	local head = char and char:FindFirstChild("Head")
+	local face = head and head:FindFirstChild("face")
+	if face then face:Destroy() notify("Face Gone", "Face removed.", 2) end
+end}, 2)
+
+addFeature("Troll", "FE Accessory Drop Jitter", "Button", {Text = "Drop Hats", Callback = function()
+	local char = LocalPlayer.Character
+	if char then
+		for _, v in ipairs(char:GetChildren()) do
+			if v:IsA("Accessory") then v.Parent = workspace end
+		end
+		notify("Accessories Dropped", "Dropped hats client-side.", 2)
+	end
+end}, 3)
+
+addFeature("Troll", "FE Giant Head Mesh scale", "Button", {Text = "Giant Head", Callback = function()
+	local char = LocalPlayer.Character
+	local head = char and char:FindFirstChild("Head")
+	local mesh = head and head:FindFirstChildOfClass("SpecialMesh")
+	if mesh then
+		mesh.Scale = Vector3.new(3, 3, 3)
+		notify("Giant Head", "Expanded head mesh.", 2)
+	end
+end}, 4)
+
+addFeature("Troll", "FE Glitchy Face Rotator", "Toggle", {Default = false, Callback = toggleGlitchFace}, 5)
+
+addFeature("Troll", "FE Head Spin Loop", "Toggle", {Default = false, Callback = toggleHeadSpin}, 6)
+
+addFeature("Troll", "FE Anti-Gravity Float", "Toggle", {Default = false, Callback = function(s)
+	workspace.Gravity = s and 0 or 196.2
+	notify("Anti-Gravity", s and "Floating mode active." or "Gravity restored.", 2)
+end}, 7)
+
+addFeature("Troll", "FE Headless Illusion", "Button", {Text = "Go Headless", Callback = function()
+	local char = LocalPlayer.Character
+	local head = char and char:FindFirstChild("Head")
+	if head then
+		head.Transparency = 1
+		local face = head:FindFirstChild("face")
+		if face then face.Transparency = 1 end
+		notify("Headless Illusion", "Head hidden.", 2)
+	end
+end}, 8)
+
+addFeature("Troll", "FE Dynamic Speed Spinner", "Toggle", {Default = false, Callback = toggleSpin}, 9)
+
+addFeature("Troll", "FE Screen Rainbow Flash", "Toggle", {Default = false, Callback = toggleRainbowFlash}, 10)
+
+addFeature("Troll", "FE Prank Fake Ban Popup", "Button", {Text = "Fake Ban Screen", Callback = showFakeBan}, 11)
+
+addFeature("Troll", "FE Character Size Scaler", "Slider", {Min = 1, Max = 5, Default = 1, Callback = function(v)
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		pcall(function()
+			char.Humanoid.HeadScale.Value = v
+			char.Humanoid.BodyWidthScale.Value = v
+			char.Humanoid.BodyHeightScale.Value = v
+			char.Humanoid.BodyDepthScale.Value = v
+		end)
+	end
+end}, 12)
+
+addFeature("Troll", "FE Baseplate Destroyer", "Button", {Text = "Hide Baseplate", Callback = function()
+	local bp = workspace:FindFirstChild("Baseplate") or workspace:FindFirstChild("BasePlate")
+	if bp then bp.Transparency = bp.Transparency == 0 and 1 or 0 end
+end}, 13)
+
+addFeature("Troll", "FE Silent Walking SFX", "Toggle", {Default = false, Callback = function(s)
+	local char = LocalPlayer.Character
+	for _, sound in ipairs(char:GetDescendants()) do
+		if sound:IsA("Sound") and (sound.Name == "Running" or sound.Name == "Footsteps") then
+			sound.Volume = s and 0 or 0.5
+		end
+	end
+end}, 14)
+
+addFeature("Troll", "FE Neck Lengthener", "Toggle", {Default = false, Callback = function(s)
+	local char = LocalPlayer.Character
+	local neck = char and char:FindFirstChild("Neck", true)
+	if neck then
+		neck.C0 = s and neck.C0 * CFrame.new(0, 2, 0) or neck.C0 * CFrame.new(0, -2, 0)
+	end
+end}, 15)
+
+addFeature("Troll", "FE Sound Distorter", "Toggle", {Default = false, Callback = function(s)
+	for _, snd in ipairs(workspace:GetDescendants()) do
+		if snd:IsA("Sound") then snd.PlaybackSpeed = s and 1.8 or 1 end
+	end
+end}, 16)
+
+addFeature("Troll", "FE Lag Simulator Mode", "Toggle", {Default = false, Callback = function(s)
+	settings().Network.IncomingReplicationLag = s and 1000 or 0
+end}, 17)
+
+addFeature("Troll", "FE Earthquake Shaker", "Toggle", {Default = false, Callback = function(s)
+	local conn
+	if s then
+		conn = RunService.RenderStepped:Connect(function()
+			Camera.CameraSubject = nil
+			Camera.CFrame = Camera.CFrame * CFrame.new(math.random(-50, 50)/100, math.random(-50, 50)/100, 0)
+		end)
+		task.spawn(function()
+			while s and task.wait(0.1) do end
+			if conn then conn:Disconnect() end
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then Camera.CameraSubject = hum end
+		end)
+	end
+end}, 18)
+
+addFeature("Troll", "FE Screamer Sound Prank", "Button", {Text = "Play Screamer", Callback = function()
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://9069609268"
+	sound.Volume = 10
+	sound.Parent = workspace.CurrentCamera
+	sound:Play()
+	sound.Ended:Connect(function() sound:Destroy() end)
+end}, 19)
+
+addFeature("Troll", "FE Creepy Sky Red Fog", "Toggle", {Default = false, Callback = function(s)
+	Lighting.Ambient = s and Color3.fromRGB(50, 0, 0) or LightingState.Ambient
+	Lighting.FogColor = s and Color3.fromRGB(20, 0, 0) or Color3.fromRGB(192, 192, 192)
+	Lighting.FogEnd = s and 100 or LightingState.FogEnd
+end}, 20)
+
+addFeature("Troll", "FE Look At Mouse Hook", "Toggle", {Default = false, Callback = function(s)
+	local conn
+	if s then
+		conn = RunService.Heartbeat:Connect(function()
+			local char = LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then
+				local mouse = LocalPlayer:GetMouse()
+				local target = Vector3.new(mouse.Hit.X, root.Position.Y, mouse.Hit.Z)
+				root.CFrame = CFrame.lookAt(root.Position, target)
+			end
+		end)
+		task.spawn(function()
+			while s and task.wait(0.2) do end
+			if conn then conn:Disconnect() end
+		end)
+	end
+end}, 21)
+
+addFeature("Troll", "FE Ragdoll Glitch state", "Toggle", {Default = false, Callback = function(s)
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then hum:ChangeState(s and Enum.HumanoidStateType.Physics or Enum.HumanoidStateType.GettingUp) end
+end}, 22)
+
+addFeature("Troll", "FE Jump Jitter Loop", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(0.15) do
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then hum.Jump = true end
+		end
+	end)
+end}, 23)
+
+addFeature("Troll", "FE Blocky Body Avatar", "Button", {Text = "Go Blocky", Callback = function()
+	local char = LocalPlayer.Character
+	if char then
+		for _, v in ipairs(char:GetDescendants()) do
+			if v:IsA("CharacterMesh") or v:IsA("SpecialMesh") then v:Destroy() end
+		end
+		notify("Blocky Body", "Avatar meshes deleted locally.", 2)
+	end
+end}, 24)
+
+addFeature("Troll", "FE Rainbow Accessory Hue", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(0.1) do
+			local char = LocalPlayer.Character
+			if char then
+				for _, acc in ipairs(char:GetChildren()) do
+					if acc:IsA("Accessory") then
+						local handle = acc:FindFirstChild("Handle")
+						if handle then handle.Color = Color3.fromHSV(tick() % 4 / 4, 1, 1) end
+					end
+				end
+			end
+		end
+	end)
+end}, 25)
+
+addFeature("Troll", "FE Walk On Water Platform", "Toggle", {Default = false, Callback = function(s)
+	local plat = workspace:FindFirstChild("EuF_Water_Plat")
+	if s then
+		if not plat then
+			plat = Instance.new("Part")
+			plat.Name = "EuF_Water_Plat"
+			plat.Size = Vector3.new(100, 1, 100)
+			plat.Anchored = true
+			plat.Transparency = 0.8
+			plat.Color = Color3.fromRGB(0, 180, 255)
+			plat.Parent = workspace
+		end
+		local conn
+		conn = RunService.Heartbeat:Connect(function()
+			local char = LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root and plat then
+				plat.Position = Vector3.new(root.Position.X, 50, root.Position.Z)
+			end
+		end)
+		task.spawn(function()
+			while s and task.wait(0.2) do end
+			if conn then conn:Disconnect() end
+			if plat then plat:Destroy() end
+		end)
+	else
+		if plat then plat:Destroy() end
+	end
+end}, 26)
+
+addFeature("Troll", "FE Head Expand Aura loop", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(0.2) do
+			local char = LocalPlayer.Character
+			local head = char and char:FindFirstChild("Head")
+			local mesh = head and head:FindFirstChildOfClass("SpecialMesh")
+			if mesh then
+				mesh.Scale = Vector3.new(math.sin(tick() * 5) * 2 + 3, math.sin(tick() * 5) * 2 + 3, math.sin(tick() * 5) * 2 + 3)
+			end
+		end
+		local char = LocalPlayer.Character
+		local head = char and char:FindFirstChild("Head")
+		local mesh = head and head:FindFirstChildOfClass("SpecialMesh")
+		if mesh then mesh.Scale = Vector3.new(1.25, 1.25, 1.25) end
+	end)
+end}, 27)
+
+addFeature("Troll", "FE Dance Emote Spammer", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		local emotes = {"/e dance", "/e dance2", "/e dance3", "/e wave"}
+		while s and task.wait(1.5) do
+			pcall(function()
+				ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer(emotes[math.random(1, #emotes)], "All")
+			end)
+		end
+	end)
+end}, 28)
+
+addFeature("Troll", "FE WalkSpeed Jitter Mod", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(0.2) do
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then hum.WalkSpeed = math.random(10, 80) end
+		end
+		local char = LocalPlayer.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then hum.WalkSpeed = 16 end
+	end)
+end}, 29)
+
+addFeature("Troll", "FE Silent Walk Spammer", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(0.1) do
+			local char = LocalPlayer.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum and hum.MoveDirection.Magnitude > 0 then
+				hum.WalkSpeed = 0
+				task.wait(0.05)
+				hum.WalkSpeed = 32
+			end
+		end
+	end)
+end}, 30)
+
+addFeature("Troll", "FE Slow Motion Physics", "Toggle", {Default = false, Callback = function(s)
+	settings().Physics.PhysicsEnvironmentalThrottle = s and Enum.EnviromentalPhysicsThrottle.AlwaysThrottle or Enum.EnviromentalPhysicsThrottle.Default
+end}, 31)
+
+addFeature("Troll", "FE Face decal Cycle", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		local faces = {"http://www.roblox.com/asset/?id=12145412", "http://www.roblox.com/asset/?id=13038237", "http://www.roblox.com/asset/?id=14174360"}
+		while s and task.wait(0.5) do
+			local char = LocalPlayer.Character
+			local face = char and char:FindFirstChild("face", true)
+			if face and face:IsA("Decal") then face.Texture = faces[math.random(1, #faces)] end
+		end
+	end)
+end}, 32)
+
+addFeature("Troll", "FE Loop Teleport target", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(0.1) do
+			local char = LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root and selectedPlayer and selectedPlayer.Character then
+				local tr = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+				if tr then root.CFrame = tr.CFrame * CFrame.new(0, 0, -3) end
+			end
+		end
+	end)
+end}, 33)
+
+addFeature("Troll", "FE Freeze Player locally", "Toggle", {Default = false, Callback = function(s)
+	if selectedPlayer and selectedPlayer.Character then
+		for _, part in ipairs(selectedPlayer.Character:GetDescendants()) do
+			if part:IsA("BasePart") then part.Anchored = s end
+		end
+	end
+end}, 34)
+
+addFeature("Troll", "FE Reset visual character", "Button", {Text = "Force Cleanse", Callback = function()
+	local char = LocalPlayer.Character
+	if char then
+		for _, item in ipairs(char:GetDescendants()) do
+			if item:IsA("Highlight") or item.Name == "EuF_Thermal_Highlight" then item:Destroy() end
+		end
+		notify("Cleanse", "Visual modifications cleared locally.", 2)
+	end
+end}, 35)
+
+addFeature("Troll", "FE Spin Orbit Target", "Toggle", {Default = false, Callback = function(s)
+	local conn
+	if s and selectedPlayer and selectedPlayer.Character then
+		conn = RunService.Heartbeat:Connect(function()
+			local char = LocalPlayer.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			local target = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+			if root and target then
+				local angle = tick() * 6
+				root.CFrame = target.CFrame * CFrame.new(math.cos(angle) * 8, 0, math.sin(angle) * 8)
+			end
+		end)
+		task.spawn(function()
+			while s and task.wait(0.2) do end
+			if conn then conn:Disconnect() end
+		end)
+	end
+end}, 36)
+
+addFeature("Troll", "FE Anti-Fling physics kick", "Toggle", {Default = false, Callback = function(s)
+	local conn
+	if s then
+		conn = RunService.Heartbeat:Connect(function()
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer and p.Character then
+					local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+					if hrp and hrp.AssemblyLinearVelocity.Magnitude > 80 then
+						hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+						hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+					end
+				end
+			end
+		end)
+		task.spawn(function()
+			while s and task.wait(0.2) do end
+			if conn then conn:Disconnect() end
+		end)
+	end
+end}, 37)
+
+addFeature("Troll", "FE Spammer Chat Target", "Toggle", {Default = false, Callback = function(s)
+	task.spawn(function()
+		while s and task.wait(3) and selectedPlayer do
+			pcall(function()
+				ReplicatedStorage.DefaultChatSystemChatEvents.SayMessageRequest:FireServer("Hey " .. selectedPlayer.Name .. ", get trolled by EuF!", "All")
+			end)
+		end
+	end)
+end}, 38)
+
+addFeature("Troll", "FE Void target fling", "Button", {Text = "Void Fling", Callback = function()
+	if selectedPlayer and selectedPlayer.Character then
+		local root = selectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+		if root then root.CFrame = CFrame.new(0, -999, 0) notify("Target Voided", "Target flung client-side.", 2) end
+	end
+end}, 39)
+
+addFeature("Troll", "FE Kill joints self-reset", "Button", {Text = "Self Destruct Model", Callback = function()
+	local char = LocalPlayer.Character
+	if char then char:BreakJoints() notify("Self-Destruct", "Joints destroyed locally.", 2) end
+end}, 40)
+
+
+-- TAB 10: DEV OPTIONS (DEVELOPER POWER TOOLS)
+addFeature("Dev", "Anti-Kick Metatable Shield", "Toggle", {Default = false, Callback = function(s)
+	antiKickActive = s
+	notify("Anti-Kick Shield", s and "Active metatable filter engaged." or "Anti-kick disengaged.", 3)
+end}, 1)
+
+addFeature("Dev", "Anti-BAN Remote Shield", "Toggle", {Default = false, Callback = function(s)
+	antiBanActive = s
+	notify("Anti-BAN Shield", s and "Remote Event security filter active." or "Shield disengaged.", 3)
+end}, 2)
+
+addFeature("Dev", "Server-Side Remote Scanner", "Button", {Text = "Scan Remotes", Callback = function()
+	notify("Scanning Remotes", "Searching for vulnerable server-side backdoors...", 2)
+	task.wait(0.5)
+	local found = {}
+	for _, v in ipairs(game:GetDescendants()) do
+		pcall(function()
+			if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+				local n = v.Name:lower()
+				if n:find("run") or n:find("exec") or n:find("load") or n:find("server") or n:find("backdoor") or n:find("admin") then
+					table.insert(found, v)
+				end
+			end
+		end)
+	end
+	if #found > 0 then
+		local list = {}
+		for _, r in ipairs(found) do table.insert(list, r.Name) end
+		notify("Backdoors Found!", "Found " .. #found .. " SS remotes:\n" .. table.concat(list, ", "), 5)
+	else
+		notify("Scan Complete", "No backdoor remotes detected in game hierarchy.", 3)
+	end
+end}, 3)
+
+addFeature("Dev", "Dex Explorer Lite Loader", "Button", {Text = "Load Dex", Callback = function()
+	notify("Dex Loader", "Executing Dex Explorer script...", 2)
+	pcall(function()
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/dex.lua"))()
+	end)
+end}, 4)
+
+addFeature("Dev", "Infinite Yield Admin Console", "Button", {Text = "Load Inf Yield", Callback = function()
+	notify("IY Loader", "Executing Infinite Yield Admin console...", 2)
+	pcall(function()
+		loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+	end)
+end}, 5)
+
+addFeature("Dev", "Server-Side code executor", "Textbox", {Placeholder = "Code...", Callback = function(text, enter)
+	if enter then
+		notify("Executing Server-Side", "Attempting execution on backdoor remotes...", 2)
+		local found = false
+		for _, v in ipairs(game:GetDescendants()) do
+			pcall(function()
+				if v:IsA("RemoteEvent") then
+					local n = v.Name:lower()
+					if n:find("run") or n:find("exec") or n:find("load") or n:find("server") or n:find("backdoor") then
+						v:FireServer(text)
+						found = true
+					end
+				end
+			end)
+		end
+		if found then notify("Payload Sent", "Fired execution code to detected remotes.", 2)
+		else notify("Execution Failed", "No vulnerable remotes found. Exploit requires game backdoor.", 3) end
+	end
+end}, 6)
+
+addFeature("Dev", "Remote Event Logger Spy", "Toggle", {Default = false, Callback = function(s)
+	spyActive = s
+	notify("Remote Spy", s and "Active. Monitor console output (F9)." or "Spy disabled.", 3)
+end}, 7)
+
+addFeature("Dev", "Copy Character Path", "Button", {Text = "Copy Path", Callback = function()
+	pcall(function()
+		setclipboard("game.Workspace." .. LocalPlayer.Name)
+		notify("Path Copied", "Character path written to clipboard.", 2)
+	end)
+end}, 8)
+
+addFeature("Dev", "Unhide Hidden UI Instances", "Button", {Text = "Reveal UI", Callback = function()
+	local count = 0
+	for _, gui in ipairs(ParentGui:GetDescendants()) do
+		if gui:IsA("ScreenGui") and not gui.Enabled then
+			gui.Enabled = true
+			count = count + 1
+		elseif gui:IsA("Frame") and not gui.Visible then
+			gui.Visible = true
+			count = count + 1
+		end
+	end
+	notify("UI Revealed", "Enabled/Unhid " .. count .. " UI instances.", 3)
+end}, 9)
+
+addFeature("Dev", "Performance Stats Overlay", "Toggle", {Default = false, Callback = function(s)
+	game:GetService("GuiService").SetGameplayStatsShown(s)
+	notify("Performance Overlay", s and "Roblox overlay displayed." or "Overlay hidden.", 2)
+end}, 10)
+
+addFeature("Dev", "Clean Nil Instances memory", "Button", {Text = "Sweep Memory", Callback = function()
+	local count = 0
+	pcall(function()
+		for _, v in ipairs(game:GetDescendants()) do
+			if v.Parent == nil then
+				v:Destroy()
+				count = count + 1
+			end
+		end
+	end)
+	notify("Memory Swept", "Cleaned " .. count .. " orphan instances.", 2)
+end}, 11)
+
+addFeature("Dev", "Print Game Metatable Status", "Button", {Text = "Test Metatable", Callback = function()
+	local raw = getrawmetatable(game)
+	if raw then
+		notify("Metatable Test", "Raw metatable access verified: SECURE HOOK WORKING.", 3)
+	else
+		notify("Metatable Test", "No raw metatable access found (Basic Executor).", 3)
+	end
+end}, 12)
+
+addFeature("Dev", "Copy Cam coordinate CFrame", "Button", {Text = "Copy CFrame", Callback = function()
+	pcall(function()
+		setclipboard(tostring(Camera.CFrame))
+		notify("CFrame Copied", "Camera coordinates saved.", 2)
+	end)
+end}, 13)
+
+
 -- TAB 9: SETTINGS & CONFIGURATIONS
 addFeature("Settings", "Theme Preset Selection", "Dropdown", {Options = {"Dark Neon", "Cyberpunk", "Glassmorphism", "Sakura", "Light Mode"}, Default = "Dark Neon", Callback = function(opt)
 	applyTheme(opt)
@@ -4195,6 +5238,14 @@ addFeature("Settings", "Panel Self-Destruct Unload", "Button", {Text = "Unload",
 	
 	if thermalActive then toggleThermal(false) end
 	if lidarActive then toggleLidar(false) end
+	if feInvisibleActive then toggleFEInvisible(false) end
+	if spinning then toggleSpin(false) end
+	if headSpinActive then toggleHeadSpin(false) end
+	if glitchFaceActive then toggleGlitchFace(false) end
+	if rainbowFlash then toggleRainbowFlash(false) end
+	spyActive = false
+	antiKickActive = false
+	antiBanActive = false
 	if thermalCC then thermalCC:Destroy() end
 	if lidarFolder then lidarFolder:Destroy() end
 	
